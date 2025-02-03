@@ -386,7 +386,7 @@ class Summariser:
         if gzip_archive_otu_table_list:
             with open(gzip_archive_otu_table_list) as f:
                 lines = f.readlines()
-                print(lines)
+                logging.debug(f"Found {len(lines)} in achive otu table list.")
                 for a in lines:
                     logging.debug("Reading gzip archive table {} ..".format(a))
                     with gzip.open(a.strip()) as g:
@@ -556,28 +556,7 @@ class Summariser:
             for profile_file in input_taxonomic_profiles:
                 with open(profile_file) as f:
                     for profile in CondensedCommunityProfile.each_sample_wise(f):
-                        name_to_coverage = {}
-                        for node in profile.breadth_first_iter():
-                            node_level = node.calculate_level()
-                            if node_level == 0:
-                                continue
-                            if node_level not in name_to_coverage:
-                                name_to_coverage[node_level] = 0.
-                            name_to_coverage[node_level] += node.coverage
-                        result = pl.DataFrame({
-                            'level': list(name_to_coverage.keys()),
-                            'coverage': list(name_to_coverage.values())
-                        }).with_columns(pl.lit(profile.sample).alias('sample')).with_columns(
-                            ((pl.col('coverage') / pl.col('coverage').sum()).alias('relative_abundance') * 100).round(2),
-                        )
-
-                        if len(result.select(pl.col('level')).group_by('level').count()) in [7, 8]:
-                            # If there's 7 or 8 (including 0) levels, then assume that this is a regular taxonomy going on.
-                            levels = ['root','domain','phylum','class','order','family','genus','species']
-                            level_id_to_level_name = {i: levels[i] for i in range(len(levels))}
-                            result = result.with_columns(
-                                level = pl.col('level').replace_strict(level_id_to_level_name, return_dtype=pl.Utf8)
-                            )
+                        result = profile.taxonomic_level_coverage_table()
 
                         result = result.select([
                             'sample',
@@ -638,8 +617,11 @@ class Summariser:
     def write_taxonomic_profile_with_extras(**kwargs):
         input_taxonomic_profile_files = kwargs.pop('input_taxonomic_profile_files')
         output_io = kwargs.pop('output_taxonomic_profile_extras_io')
+        num_decimal_places = kwargs.pop('num_decimal_places') # Default to 2 below
         if len(kwargs) > 0:
             raise Exception("Unexpected arguments detected: %s" % kwargs)
+        if num_decimal_places is None:
+            num_decimal_places = 2
 
         logging.info("Writing taxonomic profile with extras")
 
@@ -663,9 +645,9 @@ class Summariser:
                         full_coverage = wn.get_full_coverage()
                         print("\t".join([
                             profile.sample,
-                            str(wn.coverage),
-                            str(round(full_coverage, 2)),
-                            str(round(full_coverage / total_coverage * 100, 2)),
+                            str(round(wn.coverage, num_decimal_places)),
+                            str(round(full_coverage, num_decimal_places)),
+                            str(round(full_coverage / total_coverage * 100, num_decimal_places)),
                             str(levels[level]),
                             '; '.join(wn.get_taxonomy())
                         ]), file=output_io)

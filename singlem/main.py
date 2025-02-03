@@ -489,7 +489,8 @@ def main():
     summarise_taxonomic_profile_output_args.add_argument('--output-species-by-site-level', help="Output site by species level to this file. Requires --output-species-by-site-relative-abundance.", choices=['species','genus','family','order','class','phylum','domain'], default='species')
     summarise_taxonomic_profile_output_args.add_argument('--output-species-by-site-relative-abundance-prefix', metavar='PATH_PREFIX', help="Output site by species relative abundance to this file prefix. One file will be written for each taxonomic level.")
     summarise_taxonomic_profile_output_args.add_argument('--output-filled-taxonomic-profile', metavar='FILE', help="Output a taxonomic profile where the coverage of each taxon includes the coverage of each of its descendent taxons e.g. the d__Bacteria entry includes the p__Patescibacteria entry.")
-    summarise_taxonomic_profile_output_args.add_argument('--output-taxonomic-profile-with-extras', metavar='FILE', help="Output a taxonomic profile with extra information (coverage, 'filled' coverage, relative abundance, taxonomy level). ")
+    summarise_taxonomic_profile_output_args.add_argument('--output-taxonomic-profile-with-extras', metavar='FILE', help="Output a taxonomic profile with extra information (coverage, 'filled' coverage, relative abundance, taxonomy level).")
+    summarise_taxonomic_profile_output_args.add_argument('--num-decimal-places', metavar='INT', type=int, help="Number of decimal places to report in the coverage column of the --output-taxonomic-profile-with-extras [default: 2].")
     summarise_taxonomic_profile_output_args.add_argument('--output-taxonomic-level-coverage', metavar='FILE', help="Output summary of how much coverage has been assigned to each taxonomic level in a taxonomic profile to a TSV file.")
     
     summarise_otu_table_input_args = summarise_parser.add_argument_group('OTU table input')
@@ -849,6 +850,8 @@ def main():
             raise Exception("--output-filled-taxonomic-profile requires --input-taxonomic-profiles to be defined")
         if args.output_taxonomic_profile_with_extras and not args.input_taxonomic_profiles:
             raise Exception("--output-taxonomic-profile-with-extras requires --input-taxonomic-profiles to be defined")
+        if args.num_decimal_places and not args.output_taxonomic_profile_with_extras:
+            raise Exception("--num-decimal-places currently requires --output-taxonomic-profile-with-extras to be defined")
 
         if args.stream_inputs or args.unaligned_sequences_dump_file:
             from singlem.otu_table_collection import StreamingOtuTableCollection
@@ -924,7 +927,10 @@ def main():
             else:
                 mpkg = Metapackage.acquire_default()
                 pkgs = mpkg.singlem_packages
-            o2.otu_table_objects.append(otus.exclude_off_target_hits(pkgs))
+            # Do not lose the extra columns if they are provided as input by
+            # using return_archive_table=True. Currently an issue here that it
+            # doesn't error when extra info is not provided as input.
+            o2.otu_table_objects.append(otus.exclude_off_target_hits(pkgs, return_archive_table=True))
             otus = o2
 
         if args.krona:
@@ -966,7 +972,7 @@ def main():
             with open(args.rarefied_output_otu_table, 'w') as f:
                 Summariser.write_rarefied_otu_table(
                     table_collection = otus,
-                    output_table_io = open(args.rarefied_output_otu_table,'w'),
+                    output_table_io = f,
                     number_to_choose = args.number_to_choose)
         elif args.output_translated_otu_table:
             with open(args.output_translated_otu_table, 'w') as f:
@@ -1036,7 +1042,8 @@ def main():
                 with open(args.output_taxonomic_profile_with_extras, 'w') as f:
                     Summariser.write_taxonomic_profile_with_extras(
                         input_taxonomic_profile_files = args.input_taxonomic_profiles,
-                        output_taxonomic_profile_extras_io = f)
+                        output_taxonomic_profile_extras_io = f,
+                        num_decimal_places = args.num_decimal_places)
             else:
                 raise Exception("Expected --output-taxonomic-profile-krona or --output-site-by-species-relative-abundance or --output-taxonomic-level-coverage to be defined, since --input-taxonomic-profiles was defined")
 
